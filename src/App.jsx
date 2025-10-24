@@ -11,26 +11,60 @@ export default function App() {
 
   async function handleSend(e) {
     e.preventDefault();
+    console.log("[UI] submit clicked");
     setStatus("Envoi...");
 
     try {
-      const API = import.meta.env.VITE_API_URL;
-      const resp = await fetch(`${API}/api/send`, {
+      // ——— Debug de l’URL d’API injectée au build ———
+      const API_RAW = import.meta.env.VITE_API_URL;
+      const API = (API_RAW || "").replace(/\/+$/, ""); // retire les / finaux
+      console.log("[UI] API env =", API_RAW, "| API used =", API);
+
+      if (!API) {
+        throw new Error(
+          "VITE_API_URL est vide côté front (variable d'env non définie au build)."
+        );
+      }
+
+      const url = `${API}/api/send`;
+      console.log("[UI] fetch →", url);
+
+      const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           to,
           subject,
           html: `<p>${message.replace(/\n/g, "<br/>")}</p>`,
-          cc: cc.trim() === "" ? null : cc.trim(), // <- null si vide
-          bcc: bcc.trim() === "" ? null : bcc.trim(), // <- null si vide
+          cc: cc.trim() === "" ? null : cc.trim(),
+          bcc: bcc.trim() === "" ? null : bcc.trim(),
         }),
       });
 
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || "Erreur serveur");
+      // ——— Lecture en texte d’abord pour diagnostiquer si ce n’est pas du JSON ———
+      const text = await resp.text();
+      console.log("[UI] HTTP", resp.status, resp.statusText, "body:", text);
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(
+          `HTTP ${resp.status} ${
+            resp.statusText
+          } — Réponse non-JSON: ${text.slice(0, 180)}…`
+        );
+      }
+
+      if (!resp.ok) {
+        throw new Error(
+          data?.error || `HTTP ${resp.status} ${resp.statusText}`
+        );
+      }
+
       setStatus(`OK ✅ ID: ${data.id}`);
     } catch (err) {
+      console.error("[UI] send error:", err);
       setStatus(`Erreur ❌ ${err.message}`);
     }
   }
