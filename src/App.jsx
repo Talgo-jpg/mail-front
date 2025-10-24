@@ -11,40 +11,33 @@ export default function App() {
 
   async function handleSend(e) {
     e.preventDefault();
-    console.log("[UI] submit clicked");
     setStatus("Envoi...");
 
     try {
-      // ——— Debug de l’URL d’API injectée au build ———
+      // URL d'API injectée au build par Vite (Render: VITE_API_URL)
       const API_RAW = import.meta.env.VITE_API_URL;
-      const API = (API_RAW || "").replace(/\/+$/, ""); // retire les / finaux
-      console.log("[UI] API env =", API_RAW, "| API used =", API);
+      const API = (API_RAW || "").replace(/\/+$/, "");
+      if (!API) throw new Error("VITE_API_URL n'est pas défini côté front.");
 
-      if (!API) {
-        throw new Error(
-          "VITE_API_URL est vide côté front (variable d'env non définie au build)."
-        );
-      }
+      // Construire le payload sans champs vides
+      const body = {
+        to,
+        subject,
+        html: `<p>${message.replace(/\n/g, "<br/>")}</p>`,
+      };
+      const ccTrim = cc.trim();
+      const bccTrim = bcc.trim();
+      if (ccTrim) body.cc = ccTrim;
+      if (bccTrim) body.bcc = bccTrim;
 
-      const url = `${API}/api/send`;
-      console.log("[UI] fetch →", url);
-
-      const resp = await fetch(url, {
+      const resp = await fetch(`${API}/api/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to,
-          subject,
-          html: `<p>${message.replace(/\n/g, "<br/>")}</p>`,
-          cc: cc.trim() === "" ? null : cc.trim(),
-          bcc: bcc.trim() === "" ? null : bcc.trim(),
-        }),
+        body: JSON.stringify(body),
       });
 
-      // ——— Lecture en texte d’abord pour diagnostiquer si ce n’est pas du JSON ———
+      // Lire en texte puis tenter JSON (meilleur diagnostic en prod)
       const text = await resp.text();
-      console.log("[UI] HTTP", resp.status, resp.statusText, "body:", text);
-
       let data;
       try {
         data = JSON.parse(text);
@@ -57,14 +50,15 @@ export default function App() {
       }
 
       if (!resp.ok) {
-        throw new Error(
-          data?.error || `HTTP ${resp.status} ${resp.statusText}`
-        );
+        // Afficher les erreurs de validation Zod si présentes
+        const detail = data?.details?.fieldErrors
+          ? JSON.stringify(data.details.fieldErrors)
+          : data?.error;
+        throw new Error(detail || `HTTP ${resp.status} ${resp.statusText}`);
       }
 
       setStatus(`OK ✅ ID: ${data.id}`);
     } catch (err) {
-      console.error("[UI] send error:", err);
       setStatus(`Erreur ❌ ${err.message}`);
     }
   }
